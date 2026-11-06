@@ -1,0 +1,55 @@
+name: Codzienna aktualizacja typow
+
+on:
+  schedule:
+    # GitHub liczy czas w UTC. Dwa wpisy pokrywaja czas zimowy i letni;
+    # krok "Sprawdz godzine" przepuszcza tylko ten, ktory wypada ok. 21:30 w Warszawie.
+    - cron: "30 19 * * *"
+    - cron: "30 20 * * *"
+  workflow_dispatch:   # reczne uruchomienie przyciskiem "Run workflow"
+
+permissions:
+  contents: write      # potrzebne, aby zapisac docs/data.json do repozytorium
+
+jobs:
+  aktualizacja:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sprawdz godzine (Europe/Warsaw)
+        id: czas
+        run: |
+          M=$((10#$(TZ=Europe/Warsaw date +%H) * 60 + 10#$(TZ=Europe/Warsaw date +%M)))
+          # okno 21:20-22:20 toleruje opoznienia kolejki GitHuba
+          if [ "${{ github.event_name }}" = "schedule" ] && { [ "$M" -lt 1280 ] || [ "$M" -gt 1340 ]; }; then
+            echo "Poza oknem 21:20-22:20 czasu warszawskiego - pomijam."
+            echo "uruchom=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "uruchom=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.czas.outputs.uruchom == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.czas.outputs.uruchom == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Zainstaluj zaleznosci
+        if: steps.czas.outputs.uruchom == 'true'
+        run: pip install requests
+
+      - name: Pobierz kursy i wygeneruj dane
+        if: steps.czas.outputs.uruchom == 'true'
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python skaner.py
+
+      - name: Zapisz dane w repozytorium
+        if: steps.czas.outputs.uruchom == 'true'
+        run: |
+          git config user.name "raport-bot"
+          git config user.email "raport-bot@users.noreply.github.com"
+          git add docs/data.json
+          git diff --cached --quiet || git commit -m "Aktualizacja typow $(date -u +%F)"
+          git push

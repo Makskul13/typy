@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Typy</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Typy">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
+<style>
+  :root {
+    --bg: #0b1220; --card: #121c30; --line: #1f2c47;
+    --text: #e6edf7; --muted: #8da0bb; --accent: #22c55e; --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 0 16px calc(24px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg);
+    padding: calc(14px + env(safe-area-inset-top)) 0 10px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 24px; margin: 0; letter-spacing: -.3px; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  button#refresh { background: var(--card); color: var(--text); border: 1px solid var(--line);
+    border-radius: 12px; padding: 9px 14px; font-size: 15px; }
+  button#refresh:active { opacity: .6; }
+
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 2px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; background: var(--card); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 13px; font-size: 14px; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #04230f; font-weight: 600; }
+
+  .notice { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); color: #fcd34d;
+    border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 12px 0 0; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 14px; margin-top: 12px; }
+  .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+  .teams { font-size: 17px; font-weight: 600; margin: 8px 0 12px; }
+  .pickrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pick { font-size: 14px; color: var(--muted); }
+  .pick b { display: inline-block; color: var(--text); font-size: 15px; margin-left: 4px; }
+  .prob { font-size: 26px; font-weight: 700; color: var(--accent); letter-spacing: -.5px; }
+  .bar { height: 6px; background: var(--line); border-radius: 99px; margin: 10px 0 10px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+  .foot { color: var(--muted); font-size: 13px; }
+  .foot b { color: var(--text); }
+
+  .empty { text-align: center; color: var(--muted); padding: 56px 12px; }
+  .empty .big { font-size: 40px; }
+
+  .controls { display: flex; align-items: center; gap: 14px; padding: 12px 0 4px; }
+  .slider { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
+  .slider b { color: var(--text); }
+  .slider input { width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+  .seg { flex: none; display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { background: none; border: 0; color: var(--muted); padding: 8px 11px; font-size: 13px; }
+  .seg button.on { background: var(--line); color: var(--text); font-weight: 600; }
+  .disclaimer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div>
+      <h1>Typy</h1>
+      <div class="sub" id="updated">Ładowanie…</div>
+    </div>
+    <button id="refresh" type="button">Odśwież</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="controls">
+    <label class="slider">Min. prawdopodobieństwo: <b id="thLabel">65%</b>
+      <input type="range" id="th" min="55" max="85" step="1" value="65">
+    </label>
+    <div class="seg" id="sort">
+      <button type="button" data-s="prob" class="on">Pewność</button>
+      <button type="button" data-s="time">Czas</button>
+    </div>
+  </div>
+</header>
+
+<div id="notice"></div>
+<main id="list"></main>
+<p class="disclaimer">Prawdopodobieństwo to średnia rynkowa po usunięciu marży bukmachera.<br>
+Nie gwarantuje wygranej. Graj odpowiedzialnie.</p>
+
+<script>
+const TZ = 'Europe/Warsaw';
+const ICONS = { soccer: '⚽', basketball: '🏀', hockey: '🏒' };
+const fmtStart = new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'short', day: 'numeric',
+  month: 'short', hour: '2-digit', minute: '2-digit' });
+
+const SLIDER_MAX = 85;
+const recall = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+let DATA = null;
+let FILTER = 'all';
+let THRESH = parseInt(recall('th'), 10) || null;   // w procentach; null = wartość domyślna z danych
+let SORT = recall('sort') === 'time' ? 'time' : 'prob';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pickName = (p) => (p === 'Draw' ? 'Remis' : p);
+
+async function load() {
+  $('updated').textContent = 'Ładowanie…';
+  try {
+    const res = await fetch('data.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    DATA = await res.json();
+  } catch (e) {
+    DATA = null;
+    $('updated').textContent = 'Nie udało się pobrać danych';
+    $('chips').innerHTML = '';
+    $('notice').innerHTML = '';
+    $('list').innerHTML = '<div class="empty"><div class="big">📡</div><p>Brak połączenia lub danych.<br>Spróbuj odświeżyć.</p></div>';
+    return;
+  }
+  render();
+}
+
+function setupControls() {
+  const lo = Math.round((DATA.min_probability || 0.55) * 100);
+  if (THRESH === null) THRESH = Math.round((DATA.default_threshold || 0.65) * 100);
+  THRESH = Math.min(SLIDER_MAX, Math.max(lo, THRESH));
+  $('th').min = lo;
+  $('th').max = SLIDER_MAX;
+  $('th').value = THRESH;
+  $('thLabel').textContent = THRESH + '%';
+  for (const b of $('sort').children || []) b.classList.toggle('on', b.dataset.s === SORT);
+}
+
+function allPicks() {
+  const out = [];
+  for (const l of DATA.leagues || []) {
+    for (const p of l.picks) {
+      if (p.prob * 100 >= THRESH - 1e-9) out.push({ ...p, league: l.name, sport: l.sport, key: l.key });
+    }
+  }
+  return out.sort(SORT === 'time'
+    ? (a, b) => new Date(a.start) - new Date(b.start) || b.prob - a.prob
+    : (a, b) => b.prob - a.prob);
+}
+
+function render() {
+  setupControls();
+  const picks = allPicks();
+
+  if (!DATA.generated_at) {
+    $('updated').textContent = 'Jeszcze brak pierwszego raportu';
+  } else {
+    const gen = new Date(DATA.generated_at);
+    $('updated').textContent = 'Aktualizacja: ' + fmtStart.format(gen);
+    const ageH = (Date.now() - gen.getTime()) / 3600000;
+    $('notice').innerHTML = ageH > 36
+      ? '<div class="notice">Dane mogą być nieaktualne (ostatnia aktualizacja ponad 36 godz. temu).</div>' : '';
+  }
+
+  const counts = {};
+  for (const p of picks) counts[p.key] = (counts[p.key] || 0) + 1;
+  let chips = `<button class="chip ${FILTER === 'all' ? 'on' : ''}" data-k="all">Wszystkie (${picks.length})</button>`;
+  for (const l of DATA.leagues || []) {
+    if (!counts[l.key]) continue;
+    chips += `<button class="chip ${FILTER === l.key ? 'on' : ''}" data-k="${esc(l.key)}">${ICONS[l.sport] || ''} ${esc(l.name)} (${counts[l.key]})</button>`;
+  }
+  $('chips').innerHTML = chips;
+  if (FILTER !== 'all' && !counts[FILTER]) { FILTER = 'all'; return render(); }
+
+  const shown = FILTER === 'all' ? picks : picks.filter((p) => p.key === FILTER);
+  if (!shown.length) {
+    const lo = Math.round((DATA.min_probability || 0.55) * 100);
+    const hint = THRESH > lo ? '<br>Spróbuj obniżyć próg suwakiem.' : '';
+    $('list').innerHTML = `<div class="empty"><div class="big">🔍</div>
+      <p>Brak typów z prawdopodobieństwem ≥ ${THRESH}%<br>w najbliższych ${DATA.hours_ahead || 48} godzinach.${hint}</p></div>`;
+    return;
+  }
+
+  $('list').innerHTML = shown.map((p) => {
+    const pct = (p.prob * 100).toFixed(1);
+    return `<article class="card">
+      <div class="meta"><span>${ICONS[p.sport] || ''} ${esc(p.league)}</span><span>${esc(fmtStart.format(new Date(p.start)))}</span></div>
+      <div class="teams">${esc(p.home)} – ${esc(p.away)}</div>
+      <div class="pickrow">
+        <div class="pick">Typ:<b>${esc(pickName(p.pick))}</b></div>
+        <div class="prob">${pct}%</div>
+      </div>
+      <div class="bar"><i style="width:${Math.min(100, p.prob * 100)}%"></i></div>
+      <div class="foot">Najlepszy kurs <b>${p.best_odds.toFixed(2)}</b> · ${esc(p.best_bookmaker)} · śr. z ${p.bookmakers} bukm.</div>
+    </article>`;
+  }).join('');
+}
+
+$('chips').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip');
+  if (!b) return;
+  FILTER = b.dataset.k;
+  render();
+  window.scrollTo({ top: 0 });
+});
+$('th').addEventListener('input', (e) => {
+  THRESH = parseInt(e.target.value, 10);
+  store('th', THRESH);
+  if (DATA) render();
+});
+$('sort').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  SORT = b.dataset.s;
+  store('sort', SORT);
+  if (DATA) render();
+});
+$('refresh').addEventListener('click', load);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>

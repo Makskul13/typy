@@ -1,0 +1,8 @@
+{
+ "generated_at": null,
+ "min_probability": 0.55,
+ "default_threshold": 0.65,
+ "hours_ahead": 48,
+ "requests_remaining": null,
+ "leagues": []
+}
